@@ -1,0 +1,84 @@
+############################
+# Node / PNPM / JS 生态
+############################
+node_modules/
+.pnpm-store/
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+############################
+# 构建产物
+############################
+dist/
+dist-electron/
+out/
+release/
+build/
+
+############################
+# Electron / Vite 缓存
+############################
+.vite/
+.vite-electron/
+.cache/
+.eslintcache
+
+############################
+# Electron 运行期数据
+############################
+electron-data/
+userdata/
+app-data/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+############################
+# 本地配置 / 用户状态
+############################
+.env
+.env.local
+.env.*.local
+config.local.json
+
+############################
+# 操作系统垃圾
+############################
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+############################
+# IDE / 编辑器
+############################
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+############################
+# 日志
+############################
+logs/
+*.log
+
+############################
+# 临时文件
+############################
+tmp/
+temp/
+*.tmp
+
+############################
+# Electron 打包生成的安装包
+############################
+*.exe
+*.dmg
+*.AppImage
+*.deb
+*.rpm
