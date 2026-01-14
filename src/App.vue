@@ -187,7 +187,7 @@ onMounted(async () => {
         </div>
       </div>
       <div class="actions">
-        <button class="btn" type="button" @click="onClickRefresh" :disabled="loading">刷新</button>
+        <button class="btn btnAccent" type="button" @click="onClickRefresh" :disabled="loading">刷新</button>
       </div>
     </header>
 
@@ -216,7 +216,7 @@ onMounted(async () => {
           文件库 <span class="muted">({{ library.length }})</span>
         </div>
         <div class="nav">
-          <button class="btn" type="button" @click="goUp" :disabled="!currentDir">上一级</button>
+          <button class="btn btnGhost" type="button" @click="goUp" :disabled="!currentDir">上一级</button>
           <div class="crumbs">
             <span
               v-for="(c, idx) in breadcrumbs"
@@ -366,17 +366,47 @@ onMounted(async () => {
 }
 
 .btn {
-  padding: 8px 12px;
-  border-radius: 10px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--panel) 75%, var(--fg) 25%);
+  background: color-mix(in srgb, var(--panel) 88%, var(--fg) 12%);
   color: var(--fg);
   cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+  transition: transform 120ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border) 55%);
+  background: color-mix(in srgb, var(--panel) 80%, var(--fg) 20%);
+  transform: translateY(-1px);
 }
 
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  transform: none;
+}
+
+.btnAccent {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border) 45%);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel) 84%);
+}
+
+.btnAccent:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border) 30%);
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel) 78%);
+}
+
+.btnGhost {
+  background: transparent;
+}
+
+.btnGhost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--panel) 85%, var(--fg) 15%);
 }
 
 .mono {
