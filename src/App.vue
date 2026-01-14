@@ -2,7 +2,6 @@
 import { computed, onMounted, ref } from 'vue'
 import type { LibraryEntry, PeerInfo } from '../shared/types'
 import { bridge, type AppInfo } from './api/bridge'
-import PeerList from './components/PeerList.vue'
 import FileTable from './components/FileTable.vue'
 
 const info = ref<AppInfo | null>(null)
@@ -22,7 +21,21 @@ function parentDir(dir: string): string {
   return parts.join('/')
 }
 
-function buildListing(entries: LibraryEntry[], dir: string): LibraryEntry[] {
+function computeDirSizes(entries: LibraryEntry[]): Map<string, number> {
+  const sizes = new Map<string, number>()
+  for (const entry of entries) {
+    if (entry.kind !== 'file') continue
+    if (!Number.isFinite(entry.size) || entry.size <= 0) continue
+    const parts = entry.path.split('/').filter(Boolean)
+    for (let i = 0; i < parts.length - 1; i++) {
+      const dirPath = parts.slice(0, i + 1).join('/')
+      sizes.set(dirPath, (sizes.get(dirPath) ?? 0) + entry.size)
+    }
+  }
+  return sizes
+}
+
+function buildListing(entries: LibraryEntry[], dir: string, dirSizes: Map<string, number>): LibraryEntry[] {
   const prefix = dir ? `${dir}/` : ''
   const dirs = new Map<string, { availablePeerIds: Set<string>; hasDownloadedChild: boolean }>()
   const directMap = new Map<string, LibraryEntry>()
@@ -69,6 +82,7 @@ function buildListing(entries: LibraryEntry[], dir: string): LibraryEntry[] {
         ...existing,
         availablePeerIds: [...mergedPeers],
         status: existing.status === 'downloaded' || agg.hasDownloadedChild ? 'downloaded' : 'missing',
+        size: dirSizes.get(path) ?? existing.size ?? 0,
       })
       directMap.delete(path)
       continue
@@ -84,7 +98,15 @@ function buildListing(entries: LibraryEntry[], dir: string): LibraryEntry[] {
     })
   }
 
-  const merged = [...dirEntries, ...directMap.values()]
+  const merged = [...dirEntries, ...directMap.values()].map(entry => {
+    if (entry.kind === 'dir') {
+      return {
+        ...entry,
+        size: dirSizes.get(entry.path) ?? entry.size ?? 0,
+      }
+    }
+    return entry
+  })
   merged.sort((a, b) => {
     if (a.kind !== b.kind) return a.kind === 'dir' ? -1 : 1
     return a.path.localeCompare(b.path)
@@ -92,7 +114,8 @@ function buildListing(entries: LibraryEntry[], dir: string): LibraryEntry[] {
   return merged
 }
 
-const viewEntries = computed(() => buildListing(library.value, currentDir.value))
+const dirSizes = computed(() => computeDirSizes(library.value))
+const viewEntries = computed(() => buildListing(library.value, currentDir.value, dirSizes.value))
 
 const breadcrumbs = computed(() => {
   const parts = currentDir.value ? currentDir.value.split('/').filter(Boolean) : []
@@ -187,7 +210,31 @@ onMounted(async () => {
         </div>
       </div>
       <div class="actions">
-        <button class="btn btnAccent" type="button" @click="onClickRefresh" :disabled="loading">刷新</button>
+        <div class="menu">
+          <button class="btn btnGhost" type="button">本机</button>
+          <div class="dropdown">
+            <div class="sectionTitle">本机信息</div>
+            <div class="row">
+              <div class="label">peerId</div>
+              <div class="value mono">{{ info?.peerId ?? '-' }}</div>
+            </div>
+            <div class="row">
+              <div class="label">HTTP</div>
+              <div class="value mono">{{ info?.httpPort ?? '-' }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="menu">
+          <button class="btn btnGhost" type="button">用户</button>
+          <div class="dropdown">
+            <div class="sectionTitle">在线用户（{{ peers.length }}）</div>
+            <div v-if="peers.length === 0" class="muted">暂无</div>
+            <div v-for="p in peers" :key="p.peerId" class="peer">
+              <div class="peerName">{{ p.name }}</div>
+              <div class="peerMeta mono">{{ p.address }}:{{ p.httpPort }}</div>
+            </div>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -196,24 +243,21 @@ onMounted(async () => {
     </div>
 
     <main class="main">
-      <aside class="sidebar">
-        <PeerList :peers="peers" />
-        <div class="panel">
-          <div class="panelTitle">本机信息</div>
-          <div class="row">
-            <div class="label">peerId</div>
-            <div class="value mono">{{ info?.peerId ?? '-' }}</div>
-          </div>
-          <div class="row">
-            <div class="label">HTTP</div>
-            <div class="value mono">{{ info?.httpPort ?? '-' }}</div>
-          </div>
-        </div>
-      </aside>
-
       <section class="content">
-        <div class="contentTitle">
-          文件库 <span class="muted">({{ library.length }})</span>
+        <div class="contentHead">
+          <button
+            class="iconBtn"
+            type="button"
+            title="刷新"
+            aria-label="刷新"
+            @click="onClickRefresh"
+            :disabled="loading"
+          >
+            ⟳
+          </button>
+          <div class="contentTitle">
+            文件库 <span class="muted">({{ library.length }})</span>
+          </div>
         </div>
         <div class="nav">
           <button class="btn btnGhost" type="button" @click="goUp" :disabled="!currentDir">上一级</button>
@@ -273,20 +317,17 @@ onMounted(async () => {
   font-size: 13px;
 }
 
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .main {
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 14px;
+  display: flex;
   padding: 14px;
   min-height: 0;
   flex: 1;
-}
-
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-height: 0;
 }
 
 .content {
@@ -299,6 +340,12 @@ onMounted(async () => {
 .contentTitle {
   font-weight: 800;
   font-size: 14px;
+}
+
+.contentHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .nav {
@@ -332,20 +379,6 @@ onMounted(async () => {
 
 .sep {
   font-size: 12px;
-}
-
-.panel {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel);
-  padding: 12px;
-}
-
-.panelTitle {
-  font-weight: 700;
-  font-size: 13px;
-  color: var(--muted);
-  margin-bottom: 10px;
 }
 
 .row {
@@ -407,6 +440,90 @@ onMounted(async () => {
 
 .btnGhost:hover:not(:disabled) {
   background: color-mix(in srgb, var(--panel) 85%, var(--fg) 15%);
+}
+
+.menu {
+  position: relative;
+}
+
+.menu:hover .dropdown {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 280px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 92%, var(--fg) 8%);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 140ms ease, transform 140ms ease;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.sectionTitle {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.peer {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 85%, var(--fg) 15%);
+  margin-bottom: 8px;
+}
+
+.peer:last-child {
+  margin-bottom: 0;
+}
+
+.peerName {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.peerMeta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.iconBtn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 86%, var(--fg) 14%);
+  color: var(--fg);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: transform 120ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.iconBtn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border) 45%);
+  background: color-mix(in srgb, var(--panel) 80%, var(--fg) 20%);
+  transform: translateY(-1px) rotate(-6deg);
+}
+
+.iconBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .mono {

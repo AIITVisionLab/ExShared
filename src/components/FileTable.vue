@@ -65,7 +65,7 @@ function displayName(wirePath: string): string {
             <span class="kind" :class="entry.kind">{{ entry.kind === 'dir' ? 'DIR' : 'FILE' }}</span>
             {{ displayName(entry.path) }}
           </td>
-          <td class="colSize mono">{{ entry.kind === 'file' ? formatBytes(entry.size) : '-' }}</td>
+          <td class="colSize mono">{{ entry.size > 0 ? formatBytes(entry.size) : '-' }}</td>
           <td class="colPeers">
             <span v-if="entry.availablePeerIds.length">{{ entry.availablePeerIds.length }} 个用户</span>
             <span v-else class="muted">-</span>
