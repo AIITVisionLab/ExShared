@@ -11,8 +11,97 @@ const library = ref<LibraryEntry[]>([])
 const loading = ref(true)
 const errorMsg = ref<string | null>(null)
 const downloading = ref<Set<string>>(new Set())
+const currentDir = ref<string>('')
 
 const downloadingPaths = computed(() => [...downloading.value])
+
+function parentDir(dir: string): string {
+  if (!dir) return ''
+  const parts = dir.split('/').filter(Boolean)
+  parts.pop()
+  return parts.join('/')
+}
+
+function buildListing(entries: LibraryEntry[], dir: string): LibraryEntry[] {
+  const prefix = dir ? `${dir}/` : ''
+  const dirs = new Map<string, { availablePeerIds: Set<string>; hasDownloadedChild: boolean }>()
+  const directMap = new Map<string, LibraryEntry>()
+
+  for (const entry of entries) {
+    if (dir) {
+      if (entry.path === dir) continue
+      if (!entry.path.startsWith(prefix)) continue
+    }
+
+    const rel = dir ? entry.path.slice(prefix.length) : entry.path
+    if (!rel) continue
+
+    const slashIdx = rel.indexOf('/')
+    if (slashIdx === -1) {
+      const existing = directMap.get(entry.path)
+      if (!existing) {
+        directMap.set(entry.path, entry)
+      } else if (existing.status !== 'downloaded' && entry.status === 'downloaded') {
+        directMap.set(entry.path, entry)
+      }
+      continue
+    }
+
+    const segment = rel.slice(0, slashIdx)
+    const fullDirPath = prefix ? `${prefix}${segment}` : segment
+    let agg = dirs.get(fullDirPath)
+    if (!agg) {
+      agg = { availablePeerIds: new Set<string>(), hasDownloadedChild: false }
+      dirs.set(fullDirPath, agg)
+    }
+
+    for (const peerId of entry.availablePeerIds) agg.availablePeerIds.add(peerId)
+    if (entry.status === 'downloaded') agg.hasDownloadedChild = true
+  }
+
+  const dirEntries: LibraryEntry[] = []
+  for (const [path, agg] of dirs.entries()) {
+    const existing = directMap.get(path)
+    if (existing && existing.kind === 'dir') {
+      const mergedPeers = new Set<string>(existing.availablePeerIds)
+      for (const peerId of agg.availablePeerIds) mergedPeers.add(peerId)
+      dirEntries.push({
+        ...existing,
+        availablePeerIds: [...mergedPeers],
+        status: existing.status === 'downloaded' || agg.hasDownloadedChild ? 'downloaded' : 'missing',
+      })
+      directMap.delete(path)
+      continue
+    }
+
+    dirEntries.push({
+      path,
+      kind: 'dir',
+      size: 0,
+      mtimeMs: 0,
+      status: agg.hasDownloadedChild ? 'downloaded' : 'missing',
+      availablePeerIds: [...agg.availablePeerIds],
+    })
+  }
+
+  const merged = [...dirEntries, ...directMap.values()]
+  merged.sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === 'dir' ? -1 : 1
+    return a.path.localeCompare(b.path)
+  })
+  return merged
+}
+
+const viewEntries = computed(() => buildListing(library.value, currentDir.value))
+
+const breadcrumbs = computed(() => {
+  const parts = currentDir.value ? currentDir.value.split('/').filter(Boolean) : []
+  const crumbs: Array<{ name: string; path: string }> = [{ name: '根目录', path: '' }]
+  for (let i = 0; i < parts.length; i++) {
+    crumbs.push({ name: parts[i], path: parts.slice(0, i + 1).join('/') })
+  }
+  return crumbs
+})
 
 let refreshTimer: number | null = null
 function scheduleRefresh() {
@@ -61,6 +150,14 @@ async function downloadFile(wirePath: string) {
   } finally {
     downloading.value.delete(wirePath)
   }
+}
+
+function openDir(wirePath: string) {
+  currentDir.value = wirePath
+}
+
+function goUp() {
+  currentDir.value = parentDir(currentDir.value)
 }
 
 onMounted(async () => {
@@ -118,7 +215,28 @@ onMounted(async () => {
         <div class="contentTitle">
           文件库 <span class="muted">({{ library.length }})</span>
         </div>
-        <FileTable :entries="library" :downloading-paths="downloadingPaths" @download="downloadFile" />
+        <div class="nav">
+          <button class="btn" type="button" @click="goUp" :disabled="!currentDir">上一级</button>
+          <div class="crumbs">
+            <span
+              v-for="(c, idx) in breadcrumbs"
+              :key="c.path"
+              class="crumb"
+              :class="{ active: idx === breadcrumbs.length - 1 }"
+              @click="openDir(c.path)"
+            >
+              {{ c.name }}
+            </span>
+            <span v-if="breadcrumbs.length > 1" class="sep muted">（双击文件夹进入）</span>
+          </div>
+        </div>
+        <FileTable
+          :entries="viewEntries"
+          :downloading-paths="downloadingPaths"
+          :current-dir="currentDir"
+          @download="downloadFile"
+          @openDir="openDir"
+        />
         <div class="hint muted">
           提示：把文件放进 <span class="mono">~/ExSharedDIR</span>（Windows 为用户目录下的 <span class="mono">ExSharedDIR</span>）
           ，其他设备会在局域网内自动发现并显示“未下载”的文件。
@@ -181,6 +299,39 @@ onMounted(async () => {
 .contentTitle {
   font-weight: 800;
   font-size: 14px;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.crumb {
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 85%, var(--fg) 15%);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.crumb.active {
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--border) 35%);
+  color: color-mix(in srgb, var(--accent) 75%, var(--fg) 25%);
+}
+
+.sep {
+  font-size: 12px;
 }
 
 .panel {

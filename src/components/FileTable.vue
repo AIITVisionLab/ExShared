@@ -4,10 +4,12 @@ import type { LibraryEntry } from '../../shared/types'
 const props = defineProps<{
   entries: LibraryEntry[]
   downloadingPaths: string[]
+  currentDir: string
 }>()
 
 const emit = defineEmits<{
   (e: 'download', wirePath: string): void
+  (e: 'openDir', wirePath: string): void
 }>()
 
 function formatBytes(bytes: number): string {
@@ -30,6 +32,13 @@ function statusLabel(entry: LibraryEntry): string {
 function isDownloading(wirePath: string): boolean {
   return props.downloadingPaths.includes(wirePath)
 }
+
+function displayName(wirePath: string): string {
+  if (!props.currentDir) return wirePath
+  const prefix = props.currentDir.endsWith('/') ? props.currentDir : `${props.currentDir}/`
+  if (!wirePath.startsWith(prefix)) return wirePath
+  return wirePath.slice(prefix.length)
+}
 </script>
 
 <template>
@@ -45,10 +54,16 @@ function isDownloading(wirePath: string): boolean {
         </tr>
       </thead>
       <tbody>
-        <tr v-for="entry in entries" :key="entry.path">
+        <tr
+          v-for="entry in entries"
+          :key="entry.path"
+          class="row"
+          :class="{ clickable: entry.kind === 'dir' }"
+          @dblclick="entry.kind === 'dir' ? emit('openDir', entry.path) : null"
+        >
           <td class="mono">
             <span class="kind" :class="entry.kind">{{ entry.kind === 'dir' ? 'DIR' : 'FILE' }}</span>
-            {{ entry.path }}
+            {{ displayName(entry.path) }}
           </td>
           <td class="colSize mono">{{ entry.kind === 'file' ? formatBytes(entry.size) : '-' }}</td>
           <td class="colPeers">
@@ -79,6 +94,22 @@ function isDownloading(wirePath: string): boolean {
 </template>
 
 <style scoped>
+.row {
+  user-select: none;
+}
+
+.row:hover {
+  cursor: default;
+}
+
+.row:hover td {
+  background: color-mix(in srgb, var(--panel) 90%, var(--fg) 10%);
+}
+
+.row.clickable:hover {
+  cursor: pointer;
+}
+
 .tableWrap {
   width: 100%;
   overflow: auto;
@@ -191,4 +222,3 @@ tbody tr:hover td {
   padding: 24px;
 }
 </style>
-
